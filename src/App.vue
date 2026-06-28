@@ -1,7 +1,26 @@
 <script setup>
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import heroClinic from './assets/images/hero-clinic.png'
 import benefitsRoom from './assets/images/benefits-room.png'
 import aboutClinic from './assets/images/about-clinic.png'
+
+const MOBILE_BREAKPOINT = 820
+const TESTIMONIAL_AUTOPLAY_DELAY = 5000
+const TESTIMONIAL_FLIP_DURATION = 900
+const TESTIMONIAL_FRONT_HOLD = TESTIMONIAL_AUTOPLAY_DELAY - TESTIMONIAL_FLIP_DURATION
+
+const isMobileMenuOpen = ref(false)
+const activeMetricIndex = ref(0)
+const activeSpecialtyIndex = ref(0)
+const activeTestimonialIndex = ref(0)
+const isTestimonialFlipped = ref(false)
+const isTestimonialResetting = ref(false)
+const isMobileViewport = ref(false)
+const prefersReducedMotion = ref(false)
+let metricInterval = null
+let testimonialCycleTimeout = null
+let testimonialAdvanceTimeout = null
+let reducedMotionQuery = null
 
 const specialties = [
   {
@@ -9,36 +28,42 @@ const specialties = [
     title: 'Fisioterapia Ortopédica',
     description:
       'Tratamento de disfunções musculoesqueléticas, fraturas e traumas com foco na recuperação funcional.',
+    benefits: ['Alívio da dor', 'Recuperação do movimento'],
   },
   {
     icon: 'spark',
     title: 'Fisioterapia Esportiva',
     description:
       'Prevenção e reabilitação de lesões em atletas, otimizando o desempenho e o retorno seguro ao esporte.',
+    benefits: ['Retorno seguro ao treino', 'Prevenção de novas lesões'],
   },
   {
     icon: 'pulse',
     title: 'Pós-operatória',
     description:
       'Acompanhamento especializado após cirurgias ortopédicas para acelerar a cicatrização e mobilidade.',
+    benefits: ['Recuperação guiada', 'Ganho progressivo de mobilidade'],
   },
   {
     icon: 'posture',
     title: 'RPG',
     description:
       'Reeducação Postural Global para correção de desvios da coluna e alívio de dores posturais crônicas.',
+    benefits: ['Melhora postural', 'Menos tensão crônica'],
   },
   {
     icon: 'lotus',
     title: 'Pilates Clínico',
     description:
       'Fortalecimento do core e flexibilidade através de exercícios controlados adaptados à sua condição.',
+    benefits: ['Fortalecimento profundo', 'Mais estabilidade corporal'],
   },
   {
     icon: 'shield',
     title: 'Dor Crônica',
     description:
       'Abordagem multidisciplinar para manejo e redução de quadros de dor persistente e fibromialgia.',
+    benefits: ['Controle de sintomas', 'Mais autonomia no dia a dia'],
   },
 ]
 
@@ -119,12 +144,150 @@ const socialLinks = [
   { label: 'Instagram', href: '#', icon: 'instagram' },
   { label: 'Site', href: '#', icon: 'globe' },
 ]
+
+const metrics = [
+  { value: '+10 anos', label: 'de experiência' },
+  { value: 'Individual', label: 'atendimento humanizado' },
+  { value: 'Foco', label: 'planos personalizados' },
+  { value: 'Expert', label: 'profissionais especializados' },
+]
+
+const metricTrackStyle = computed(() => ({
+  transform: `translateX(-${activeMetricIndex.value * 100}%)`,
+}))
+
+const currentTestimonial = computed(() => testimonials[activeTestimonialIndex.value])
+const nextTestimonial = computed(
+  () => testimonials[(activeTestimonialIndex.value + 1) % testimonials.length],
+)
+
+const toggleMobileMenu = () => {
+  isMobileMenuOpen.value = !isMobileMenuOpen.value
+}
+
+const closeMobileMenu = () => {
+  isMobileMenuOpen.value = false
+}
+
+const goToMetric = (index) => {
+  activeMetricIndex.value = index
+}
+
+const toggleSpecialty = (index) => {
+  activeSpecialtyIndex.value = activeSpecialtyIndex.value === index ? -1 : index
+}
+
+const startMetricAutoplay = () => {
+  stopMetricAutoplay()
+
+  if (typeof window === 'undefined' || window.innerWidth > MOBILE_BREAKPOINT) {
+    return
+  }
+
+  metricInterval = window.setInterval(() => {
+    activeMetricIndex.value = (activeMetricIndex.value + 1) % metrics.length
+  }, 5000)
+}
+
+const stopMetricAutoplay = () => {
+  if (metricInterval) {
+    window.clearInterval(metricInterval)
+    metricInterval = null
+  }
+}
+
+const startTestimonialAutoplay = () => {
+  stopTestimonialAutoplay()
+
+  if (typeof window === 'undefined' || !isMobileViewport.value || prefersReducedMotion.value) {
+    return
+  }
+
+  const queueNextFlip = () => {
+    testimonialCycleTimeout = window.setTimeout(() => {
+      isTestimonialFlipped.value = true
+
+      testimonialAdvanceTimeout = window.setTimeout(() => {
+        activeTestimonialIndex.value = (activeTestimonialIndex.value + 1) % testimonials.length
+        isTestimonialResetting.value = true
+        isTestimonialFlipped.value = false
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            isTestimonialResetting.value = false
+            queueNextFlip()
+          })
+        })
+      }, TESTIMONIAL_FLIP_DURATION)
+    }, TESTIMONIAL_FRONT_HOLD)
+  }
+
+  isTestimonialFlipped.value = false
+  isTestimonialResetting.value = false
+  queueNextFlip()
+}
+
+const stopTestimonialAutoplay = () => {
+  if (testimonialCycleTimeout) {
+    window.clearTimeout(testimonialCycleTimeout)
+    testimonialCycleTimeout = null
+  }
+
+  if (testimonialAdvanceTimeout) {
+    window.clearTimeout(testimonialAdvanceTimeout)
+    testimonialAdvanceTimeout = null
+  }
+
+  isTestimonialFlipped.value = false
+  isTestimonialResetting.value = false
+}
+
+const syncViewportState = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  isMobileViewport.value = window.innerWidth <= MOBILE_BREAKPOINT
+  prefersReducedMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+const syncMobileAnimations = () => {
+  syncViewportState()
+  startMetricAutoplay()
+  startTestimonialAutoplay()
+}
+
+onMounted(() => {
+  syncMobileAnimations()
+  reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  window.addEventListener('resize', syncMobileAnimations)
+  reducedMotionQuery.addEventListener('change', syncMobileAnimations)
+})
+
+onBeforeUnmount(() => {
+  stopMetricAutoplay()
+  stopTestimonialAutoplay()
+  window.removeEventListener('resize', syncMobileAnimations)
+  reducedMotionQuery?.removeEventListener('change', syncMobileAnimations)
+})
 </script>
 
 <template>
   <div class="page-shell">
     <header class="site-header">
       <div class="container nav-row">
+        <button
+          class="mobile-menu-toggle"
+          type="button"
+          :aria-expanded="isMobileMenuOpen ? 'true' : 'false'"
+          aria-controls="mobile-menu-panel"
+          aria-label="Abrir menu"
+          @click="toggleMobileMenu"
+        >
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
         <a class="brand" href="#inicio">MoviCare Fisioterapia</a>
         <nav class="nav-menu" aria-label="Principal">
           <a
@@ -140,6 +303,38 @@ const socialLinks = [
         <a class="button button-primary button-small desktop-cta" href="#contato">
           Agendar avaliação
         </a>
+        <a class="button button-primary button-small mobile-header-cta" href="#contato">
+          Agendar
+        </a>
+      </div>
+      <button
+        v-if="isMobileMenuOpen"
+        class="mobile-menu-backdrop"
+        type="button"
+        aria-label="Fechar menu"
+        @click="closeMobileMenu"
+      ></button>
+      <div id="mobile-menu-panel" class="mobile-nav-wrap" :class="{ open: isMobileMenuOpen }">
+        <nav class="mobile-nav" aria-label="Menu mobile">
+          <div class="mobile-nav-header">
+            <strong>Menu</strong>
+            <button type="button" class="mobile-menu-close" aria-label="Fechar menu" @click="closeMobileMenu">
+              <span></span>
+              <span></span>
+            </button>
+          </div>
+          <p class="mobile-nav-caption">Navegue pelas seções da clínica</p>
+          <a
+            v-for="link in navLinks"
+            :key="`mobile-${link.href}`"
+            :href="link.href"
+            class="mobile-nav-link"
+            @click="closeMobileMenu"
+          >
+            <span>{{ link.label }}</span>
+            <span class="mobile-nav-arrow" aria-hidden="true">→</span>
+          </a>
+        </nav>
       </div>
     </header>
 
@@ -154,26 +349,37 @@ const socialLinks = [
               Atendimento fisioterapêutico personalizado para reabilitação, prevenção de
               lesões, melhora da mobilidade e qualidade de vida.
             </p>
-            <div class="hero-actions">
+            <div class="hero-actions desktop-hero-actions">
               <a class="button button-primary" href="#contato">Agendar minha avaliação</a>
               <a class="button button-secondary" href="#especialidades">Conhecer tratamentos</a>
             </div>
-            <div class="metrics-grid">
-              <div class="metric">
-                <strong>+10 anos</strong>
-                <span>de experiência</span>
+            <div class="metrics-grid desktop-metrics">
+              <div v-for="metric in metrics" :key="metric.value" class="metric">
+                <strong>{{ metric.value }}</strong>
+                <span>{{ metric.label }}</span>
               </div>
-              <div class="metric">
-                <strong>Individual</strong>
-                <span>atendimento humanizado</span>
+            </div>
+            <div
+              class="metrics-carousel"
+              @mouseenter="stopMetricAutoplay"
+              @mouseleave="startMetricAutoplay"
+            >
+              <div class="metrics-carousel-track" :style="metricTrackStyle">
+                <div v-for="metric in metrics" :key="`mobile-${metric.value}`" class="metric metric-slide">
+                  <strong>{{ metric.value }}</strong>
+                  <span>{{ metric.label }}</span>
+                </div>
               </div>
-              <div class="metric">
-                <strong>Foco</strong>
-                <span>planos personalizados</span>
-              </div>
-              <div class="metric">
-                <strong>Expert</strong>
-                <span>profissionais especializados</span>
+              <div class="metrics-dots" aria-label="Indicadores de métricas">
+                <button
+                  v-for="(metric, index) in metrics"
+                  :key="`dot-${metric.value}`"
+                  type="button"
+                  class="metrics-dot"
+                  :class="{ active: index === activeMetricIndex }"
+                  :aria-label="`Mostrar métrica ${index + 1}`"
+                  @click="goToMetric(index)"
+                ></button>
               </div>
             </div>
           </div>
@@ -210,12 +416,34 @@ const socialLinks = [
           </div>
 
           <div class="specialties-grid">
-            <article v-for="item in specialties" :key="item.title" class="specialty-card">
-              <div class="specialty-icon" :data-icon="item.icon">
-                <span class="icon-shape"></span>
+            <article
+              v-for="(item, index) in specialties"
+              :key="item.title"
+              class="specialty-card"
+              :class="{ open: activeSpecialtyIndex === index }"
+            >
+              <button
+                type="button"
+                class="specialty-trigger"
+                :aria-expanded="activeSpecialtyIndex === index ? 'true' : 'false'"
+                @click="toggleSpecialty(index)"
+              >
+                <span class="specialty-spine-node" :class="{ active: activeSpecialtyIndex === index }"></span>
+                <span class="specialty-icon" :data-icon="item.icon">
+                  <span class="icon-shape"></span>
+                </span>
+                <span class="specialty-heading">
+                  <span class="specialty-title">{{ item.title }}</span>
+                </span>
+                <span class="specialty-chevron" aria-hidden="true">+</span>
+              </button>
+              <div class="specialty-body">
+                <p>{{ item.description }}</p>
+                <ul class="specialty-benefits">
+                  <li v-for="benefit in item.benefits" :key="benefit">{{ benefit }}</li>
+                </ul>
+                <a class="specialty-cta" href="#contato">Quero saber mais</a>
               </div>
-              <h3>{{ item.title }}</h3>
-              <p>{{ item.description }}</p>
             </article>
           </div>
         </div>
@@ -297,7 +525,7 @@ const socialLinks = [
             <h2>O que dizem nossos pacientes</h2>
           </div>
 
-          <div class="testimonials-grid">
+          <div class="testimonials-grid testimonials-grid-desktop">
             <article v-for="testimonial in testimonials" :key="testimonial.name" class="testimonial-card">
               <div class="stars" aria-label="5 estrelas">
                 <span v-for="star in 5" :key="star">★</span>
@@ -311,6 +539,55 @@ const socialLinks = [
                 </div>
               </div>
             </article>
+          </div>
+
+          <div class="testimonials-shell" aria-live="polite">
+            <div
+              class="testimonial-flip-card"
+              :class="{
+                'is-flipped': isTestimonialFlipped,
+                'is-resetting': isTestimonialResetting,
+              }"
+            >
+              <article class="testimonial-card testimonial-face testimonial-face-front">
+                <div class="testimonial-chip" aria-hidden="true">MoviCare</div>
+                <div class="stars" aria-label="5 estrelas">
+                  <span v-for="star in 5" :key="star">★</span>
+                </div>
+                <blockquote>{{ currentTestimonial.quote }}</blockquote>
+                <div class="testimonial-author">
+                  <div class="avatar">{{ currentTestimonial.initials }}</div>
+                  <div>
+                    <strong>{{ currentTestimonial.name }}</strong>
+                    <span>{{ currentTestimonial.role }}</span>
+                  </div>
+                </div>
+              </article>
+
+              <article class="testimonial-card testimonial-face testimonial-face-back" aria-hidden="true">
+                <div class="testimonial-chip" aria-hidden="true">MoviCare</div>
+                <div class="stars" aria-label="5 estrelas">
+                  <span v-for="star in 5" :key="star">★</span>
+                </div>
+                <blockquote>{{ nextTestimonial.quote }}</blockquote>
+                <div class="testimonial-author">
+                  <div class="avatar">{{ nextTestimonial.initials }}</div>
+                  <div>
+                    <strong>{{ nextTestimonial.name }}</strong>
+                    <span>{{ nextTestimonial.role }}</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="testimonial-indicators" aria-hidden="true">
+            <span
+              v-for="(testimonial, index) in testimonials"
+              :key="`indicator-${testimonial.name}`"
+              class="testimonial-indicator"
+              :class="{ 'is-active': index === activeTestimonialIndex }"
+            ></span>
           </div>
         </div>
       </section>
